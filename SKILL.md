@@ -2,7 +2,7 @@
 name: quicker-connector
 description: 与 Quicker 自动化工具集成，读取、搜索和执行 Quicker 动作列表。支持 CSV 和数据库双数据源，智能匹配用户需求并调用本地 QuickerStarter 执行。同时提供数据维护能力：解析维护工具全量备份（export 目录）、按配置映射定位/读取/修改快捷键、轮盘、手势、组合键等所有配置。
 author: CodeBuddy (optimized by Advanced Skill Creator)
-version: 1.3.0
+version: 1.5.0
 license: MIT
 tags:
   - automation
@@ -136,6 +136,8 @@ Quicker Connector 是一个专业的 Quicker 集成工具，让你能够通过 A
 | 🔧 **编码自适应** | 自动检测 UTF-8/GBK 等多种编码 |
 | 📈 **统计信息** | 完整动作分类和面板分布统计 |
 | 📤 **JSON 导出** | 一键导出完整动作列表 |
+| 🖼️ **Excel 导出（含真实图标）** | 「图标」列嵌入真实图标图片，离线可用，并自动压缩重复图片媒体 |
+| 📦 **批量导出图标文件** | 一次导出全部动作图标为独立 PNG（去重 + 并发 + 本地缓存优先），附 `icons_manifest.json` |
 
 ## 🚀 快速开始
 
@@ -268,6 +270,118 @@ class QuickerActionResult:
 ```python
 connector.export_to_json("actions.json")
 ```
+
+### 导出 Excel（含真实图标）
+
+把动作列表导出为 `.xlsx`，**「图标」列写入真实图标图片**（非文字）：
+
+```bash
+# 命令行（读取 config.json 的 csv_path）
+python scripts/export_actions_excel.py -o quicker_actions.xlsx --size 48
+
+# 注意：需用带依赖的解释器运行，本机为：
+# C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe
+```
+
+```python
+connector = QuickerConnector(source="csv")
+stats = connector.export_to_excel("quicker_actions.xlsx", icon_size=48)
+# => {"total": 357, "with_icon": 350, "no_icon": 7, "output": "...", "resolver_stats": {...}}
+```
+
+### 批量导出图标文件
+
+把每个动作的图标导出为**独立 PNG 文件**（去重 + 并发 + 本地缓存优先），并生成清单 `icons_manifest.json`：
+
+```bash
+# 命令行（读取 config.json 的 csv_path）
+python scripts/icon_exporter.py --out ./icons --size 48 --workers 8
+python scripts/icon_exporter.py --out ./icons --no-manifest      # 不生成清单
+```
+
+```python
+connector = QuickerConnector(source="csv")
+stats = connector.export_icons("./icons", size=48, max_workers=8)
+# => {"total": 357, "unique": 239, "files": 350, "from_cache": 238, "downloaded": 0,
+#     "rendered": 0, "local": 0, "missing": 1, "elapsed_sec": 1.9, "out_dir": "...",
+#     "resolver_stats": {...}, "items": [...]}
+```
+
+产出：
+
+| 产物 | 说明 |
+|---|---|
+| `<三位序号>_<动作名>_<图标短key>.png` | 每个动作一个图标文件，动作名已去除 Windows 非法字符并截断到 40 字符 |
+| `icons_manifest.json` | `[{id, name, icon, icon_file, source, ok}, ...]`，`source` 为 `url_cache`/`url_download`/`fa_cache`/`fa_render`/`local_file`/`miss` |
+
+### Excel 的三种图标模式（`icon_mode`）
+
+| icon_mode | 「图标」列内容 | Excel 体积 | 适用场景 |
+|---|---|---|---|
+| `embedded`（默认） | 嵌入真实 PNG 图片（同一 PNG 只存一份媒体） | 中等（本机 357 动作 ≈ 627.5 KB） | 需要直接看到图标 |
+| `path` | 只写图标文件的**相对路径** | 很小（≈ 65.5 KB） | 图标另存为文件、Excel 只做索引 |
+| `none` | 不处理图标 | 最小（≈ 62 KB） | 只要数据 |
+
+```bash
+# 嵌图（默认，先批量导出图标文件到 --icons-dir，再生成 Excel）
+python scripts/export_actions_excel.py -o actions.xlsx --icon-mode embedded --icons-dir actions_icons
+
+# 只写路径（Excel 极小，图标按行对应 icons 目录）
+python scripts/export_actions_excel.py -o actions.xlsx --icon-mode path --icons-dir actions_icons
+
+# 只要图标文件，不生成 Excel
+python scripts/export_actions_excel.py -o actions.xlsx --icons-only --icons-dir actions_icons
+
+# 不处理图标
+python scripts/export_actions_excel.py -o actions.xlsx --icon-mode none
+
+# 关闭图片媒体去重（体积 ≈903.3 KB，媒体条目回到 350，与去重版功能等价，仅用于排查/对比）
+python scripts/export_actions_excel.py -o actions.xlsx --icon-mode embedded --no-dedupe
+```
+
+```python
+connector.export_to_excel("actions.xlsx", icon_mode="path", icons_dir="actions_icons")
+connector.export_to_excel("actions.xlsx", icon_mode="embedded")   # 默认，等价旧行为
+```
+
+### 性能说明（本机实测：357 个动作 / 350 个图标）
+
+| 场景 | 图标解析耗时 | 端到端耗时 | 产物 |
+|---|---|---|---|
+| 冷缓存（空 `.cache/icons`，含 96 个 FA 渲染 + 最多 4 个联网下载） | ≈1.0–1.5 s | Excel ≈2.6–2.9 s / 图标导出 ≈3.0–3.6 s | ≈627.5 KB |
+| 热缓存（239 个唯一图标全部命中本地缓存） | ≈0.03–0.10 s | Excel ≈1.1–1.4 s / 图标导出 ≈1.9–2.1 s | ≈627.5 KB |
+| `--icon-mode path` | — | ≈2 s（Excel 生成本身 < 0.3 s） | ≈65.5 KB |
+| `--no-dedupe`（关闭媒体压缩） | 同 embedded | 同 embedded | ≈903.3 KB |
+
+> 耗时为本机参考值，随磁盘 IO 与网络状况波动。
+> 体积/媒体数与缓存来源无关：冷缓存（4 个 URL 图标联网下载）与热缓存（0 下载）两种状态实测均为 ≈627.5 KB（媒体 350 → 232）。232 是 350 个图标文件中**不同二进制内容**的个数（238 个唯一图标取值中有 6 对产生了字节相同的 PNG），属确定性结果。
+
+优化点：
+- **去重**：357 个动作只有 239 个唯一图标取值，同一图标只解析/渲染/下载一次（`resolver_stats.reused = 118`）
+- **本地缓存优先**：URL 图标优先命中 Quicker 本地 `ImageCache`（离线），命中即返回，完全不进线程池
+- **真并发**：只有需要下载/渲染的取值才走 `ThreadPoolExecutor`（默认 8 线程，仅标准库）
+- **媒体压缩**：`embedded` 模式下同一 PNG 在 xlsx 内只保留一份媒体（350 → 232，xlsx ≈627.5 KB；不去重则 ≈903.3 KB）
+- **可关闭**：`--no-dedupe` 关闭媒体压缩（媒体条目回到 350、体积 ≈903.3 KB），与去重版功能完全等价，仅用于排查/对比
+- **参数校验**：`--size` 必须为 ≥ 1 的整数（如 `--size 0` 会明确报错退出，不会静默产出 0 个图标）
+
+**图标解析规则**（对应 CSV「图标」列的三种取值）：
+
+| 图标取值 | 处理方式 |
+|---|---|
+| `https://...png` 等图片 URL | 优先命中 Quicker 本地缓存 `%LOCALAPPDATA%\Quicker\ImageCache\<SHA1(完整URL)大写>.png`（**完全离线**）；未命中再联网下载并缓存到 `.cache/icons/url/` |
+| `https://...svg`（SVG 图标） | Quicker 缓存/下载后，用内置 SVG 栅格化器渲染成 PNG |
+| `fa:Style_Name[:#AARRGGBB]`（字体图标） | 读取 Quicker 自带 `FontAwesomeIconsWpf.dll` 的 SVG 路径数据（已预提取为 `data/fontawesome5_svg_index.json.gz`，5996 个图标，覆盖 Solid/Regular/Light/Brands），纯 Python 栅格化渲染；`#AARRGGBB` 为可选颜色 |
+| 空值 / 本地图片路径 | 留空 / 直接使用 |
+
+依赖：`openpyxl`、`Pillow`（渲染无需 pythonnet / 网络）。
+
+相关文件：
+- `scripts/export_actions_excel.py` —— Excel 生成（表头样式、冻结窗格、筛选、行高自适应图标、三种 icon_mode、xlsx 媒体去重）
+- `scripts/icon_exporter.py` —— 批量导出图标为独立 PNG + `icons_manifest.json`（去重 + 并发 + CLI）
+- `scripts/icon_resolver.py` —— 图标取值 → 本地 PNG；`resolve()` 单条 + `resolve_many()` 批量并发
+- `scripts/svg_raster.py` —— SVG path / SVG 文件 → PNG 纯 Python 栅格化（even-odd 填充、贝塞尔/圆弧、抗锯齿）
+- `scripts/fa_icons.py` —— FontAwesome5 图标数据访问层
+- `scripts/build_fa_index.py` —— 从 `FontAwesomeIconsWpf.dll` 重建全量索引（需 pythonnet，一次性）
 
 ### 获取统计信息
 

@@ -63,3 +63,9 @@ config.json
 # Release packages (upload to GitHub Releases, not stored in repo)
 *.tar.gz
 *.zip
+
+# Icon/image cache (generated at runtime)
+.cache/
+
+# Agent workspace memory (local only)
+.workbuddy/

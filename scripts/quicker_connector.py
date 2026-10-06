@@ -997,6 +997,83 @@ class QuickerConnector:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
+    def export_icons(self, out_dir: str, size: int = 48, max_workers: int = 8) -> dict:
+        """
+        批量导出动作图标为独立 PNG 文件（去重 + 并发解析 + 本地缓存优先）。
+
+        输出 `<三位序号>_<动作名>_<图标短key>.png` 与 `icons_manifest.json`。
+
+        Args:
+            out_dir: 图标输出目录
+            size: 图标像素尺寸
+            max_workers: 并发线程数
+
+        Returns:
+            统计 dict：{"total","unique","files","from_cache","downloaded",
+            "rendered","local","missing","elapsed_sec","out_dir","items"}
+
+        Raises:
+            ValueError: size 不是 >= 1 的整数
+        """
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from icon_exporter import export_icons
+
+        return export_icons(
+            self.read_actions(),
+            out_dir,
+            size=size,
+            max_workers=max_workers,
+            log=lambda _m: None,
+        )
+
+    def export_to_excel(
+        self,
+        output_path: str,
+        icon_size: int = 48,
+        with_icons: bool = True,
+        icon_mode: str = "embedded",
+        icons_dir: Optional[str] = None,
+        max_workers: int = 8,
+    ) -> dict:
+        """
+        导出动作列表到 Excel（.xlsx），「图标」列写入真实图标图片。
+
+        图标来源：
+        - http(s) 图标：优先命中 Quicker 本地缓存（ImageCache，SHA1(URL).png），离线可用
+        - fa:Style_Name 字体图标：用 Quicker 自带 FontAwesome5 SVG 数据栅格化渲染
+        - 其余留空
+
+        Args:
+            output_path: 输出 .xlsx 路径
+            icon_size:   图标像素尺寸（默认 48）
+            with_icons:  总开关，False 等价于 icon_mode="none"（向后兼容）
+            icon_mode:   embedded=嵌入图片（默认）/ path=图标列只写文件路径 / none=不处理
+            icons_dir:   图标文件导出目录（给出时先批量导出图标文件）
+            max_workers: 图标解析并发线程数
+
+        Returns:
+            统计 dict：{"total","with_icon","no_icon","output","icon_mode", ...}
+
+        Raises:
+            ValueError: icon_mode 非法或 icon_size < 1
+            PermissionError: 目标文件被占用（原文件不会被破坏）
+        """
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from export_actions_excel import export_actions_to_excel
+
+        return export_actions_to_excel(
+            self.read_actions(),
+            output_path,
+            icon_size=icon_size,
+            with_icons=with_icons,
+            icon_mode=icon_mode,
+            icons_dir=icons_dir,
+            max_workers=max_workers,
+            log=lambda _m: None,
+        )
+
     def read_all(self) -> List[QuickerAction]:
         """读取所有动作（兼容性别名）"""
         return self.read_actions()

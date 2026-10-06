@@ -1,6 +1,6 @@
 {
   "name": "quicker-connector",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "与 Quicker 自动化工具集成，读取、搜索和执行 Quicker 动作列表。支持 CSV 和数据库双数据源，智能匹配用户需求并调用本地 QuickerStarter 执行。同时提供数据维护能力：解析维护工具全量备份（export 目录），按配置映射定位/读取/修改快捷键、轮盘、手势、组合键等所有配置，并根据修改内容自动判断单文件导回还是批量导入（先导出再导入）。",
   "author": "CodeBuddy",
   "optimizedBy": "Advanced Skill Creator",
@@ -329,6 +329,18 @@
   },
 
   "version_history": [
+    {
+      "version": "1.5.0",
+      "date": "2026-10-06",
+      "changes": [
+        "新增 scripts/icon_exporter.py：批量导出动作图标为独立 PNG + icons_manifest.json（去重 + 并发 + CLI）",
+        "IconResolver 新增 resolve_many() 批量并发接口（去重复用、本地缓存快速通道、ThreadPoolExecutor）",
+        "Excel 导出新增 icon_mode=embedded/path/none 与 icons_dir/--icons-only，兼容旧签名",
+        "embedded 模式自动压缩 xlsx 内重复图片媒体（350→232，903.3KB→627.5KB，可用 --no-dedupe 关闭）",
+        "size 参数校验（必须 >= 1，避免静默产出 0 个图标）；目标 xlsx 被占用时给出友好提示且不破坏原文件",
+        "QuickerConnector 新增 export_icons()，export_to_excel() 支持 icon_mode/icons_dir"
+      ]
+    },
     {
       "version": "1.4.0",
       "date": "2026-10-06",
