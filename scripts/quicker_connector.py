@@ -1266,6 +1266,118 @@ class QuickerExportMap:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return path, True
 
+    # ---------- 导入（导回）方案 ----------
+
+    @staticmethod
+    def _file_id_of_name(name: str) -> Optional[str]:
+        """按文件名判断属于哪个 file_type（用于导回决策）"""
+        n = name.replace("\\", "/").split("/")[-1]
+        if n == "_action_adorn.json":
+            return "action_adorn"
+        if n.startswith("state_"):
+            return "state"
+        if n.startswith("actionpage_"):
+            return "actionpage"
+        if n.startswith("common_exe_"):
+            return "exe_common"
+        if n.startswith("common_shared_subprogram_"):
+            return "shared_subprogram"
+        if n.startswith("common_user_settings"):
+            return "settings"
+        if n.startswith("common_user_gestures"):
+            return "gestures"
+        if n.startswith("common_user_mouseActions"):
+            return "mouse_actions"
+        if n.startswith("common_user_powerKeys"):
+            return "power_keys"
+        if n.startswith("common_user_preferences"):
+            return "preferences"
+        if n.startswith("common_user_favorBlocks"):
+            return "favor_blocks"
+        if n.startswith("action_") or "/actions/" in name.replace("\\", "/"):
+            return "action"
+        return None
+
+    def _import_info(self, file_id: str):
+        """从映射取 file_type 的 import_mode + import_method"""
+        for ft in self._map.get("file_types", []):
+            if ft["id"] == file_id:
+                return ft.get("import_mode", "batch"), ft.get("import_method", "")
+        return "batch", ""
+
+    def get_import_plan(self, items) -> Dict[str, Any]:
+        """
+        根据修改内容生成导入（导回）方案：判断单文件导回还是批量导入。
+
+        Args:
+            items: 修改项列表。每项可以是：
+                - 功能关键词（如"扩展热键""左键增强"）——走 config_index 匹配
+                - 文件路径或文件名（如 "actions\\action_5479d192-...json"、"common_user_settings.json"）
+                - 动作 ID 或动作名称（定位到 actions\\ 文件）
+
+        Returns:
+            {
+              "mode": "single" | "batch",     # 全部可单文件= single；含设置类= batch
+              "plans": [ {item, kind, file_id, mode, method} ... ],
+              "steps": [ ... ],                # 具体操作步骤
+              "impact": "影响范围说明",
+              "warning": "风险提示"
+            }
+        """
+        plans = []
+        for item in items:
+            item = (item or "").strip()
+            if not item:
+                continue
+            # 1) 功能关键词 → config_index
+            try:
+                entry = self.locate(item)
+                mode = entry.get("import_mode") or self._import_info(entry["file"])[0]
+                method = entry.get("import_method") or self._import_info(entry["file"])[1]
+                plans.append({"item": item, "kind": "feature", "file_id": entry["file"],
+                              "mode": mode, "method": method})
+                continue
+            except KeyError:
+                pass
+            # 2) 文件名 → file_type
+            file_id = self._file_id_of_name(item)
+            if file_id is None:
+                # 3) 动作 ID / 名称
+                try:
+                    self.find_action(item)
+                    file_id = "action"
+                except Exception:
+                    raise KeyError(
+                        f"无法识别修改项: {item}（既不是已知功能关键词，也不是映射文件或动作）"
+                    )
+            mode, method = self._import_info(file_id)
+            plans.append({"item": item, "kind": "file", "file_id": file_id,
+                          "mode": mode, "method": method})
+
+        if not plans:
+            raise ValueError("items 为空，无法生成导入方案")
+
+        has_batch = any(p["mode"] == "batch" for p in plans)
+        mode = "batch" if has_batch else "single"
+        guide = self._map.get("import_guide", {})
+
+        if mode == "single":
+            steps = [p["method"] for p in plans]
+            impact = "影响范围：仅涉及修改的文件/动作本身，不影响其它配置。"
+            warning = "导入动作时 ID 相同会覆盖原动作；如需保留旧版，先在 Quicker 中改名或导出备份。"
+        else:
+            steps = list(guide.get("batch_workflow", []))
+            impact = "影响范围：批量分享导入；常规数据对同账号为覆盖式，请只勾选本次必要数据。"
+            warning = guide.get("note", "批量导入常规数据会覆盖同账号已有设置，必须先导出再导入。")
+
+        return {
+            "mode": mode,
+            "plans": plans,
+            "steps": steps,
+            "impact": impact,
+            "warning": warning,
+        }
+
     # ---------- 动作 ----------
 
     def find_action(self, action_id_or_name: str) -> str:

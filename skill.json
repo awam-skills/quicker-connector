@@ -1,7 +1,7 @@
 {
   "name": "quicker-connector",
-  "version": "1.3.0",
-  "description": "与 Quicker 自动化工具集成，读取、搜索和执行 Quicker 动作列表。支持 CSV 和数据库双数据源，智能匹配用户需求并调用本地 QuickerStarter 执行。同时提供数据维护能力：解析维护工具全量备份（export 目录），按配置映射定位/读取/修改快捷键、轮盘、手势、组合键等所有配置。",
+  "version": "1.4.0",
+  "description": "与 Quicker 自动化工具集成，读取、搜索和执行 Quicker 动作列表。支持 CSV 和数据库双数据源，智能匹配用户需求并调用本地 QuickerStarter 执行。同时提供数据维护能力：解析维护工具全量备份（export 目录），按配置映射定位/读取/修改快捷键、轮盘、手势、组合键等所有配置，并根据修改内容自动判断单文件导回还是批量导入（先导出再导入）。",
   "author": "CodeBuddy",
   "optimizedBy": "Advanced Skill Creator",
   "license": "MIT",
@@ -155,7 +155,7 @@
     },
     {
       "name": "data_maintenance",
-      "description": "数据维护：解析维护工具全量备份（export 目录），按配置映射定位/读取/修改 Quicker 全部配置（快捷键、轮盘、手势、组合键、动作定义、状态变量等）",
+      "description": "数据维护：解析维护工具全量备份（export 目录），按配置映射定位/读取/修改 Quicker 全部配置（快捷键、轮盘、手势、组合键、动作定义、状态变量等）；并可根据修改内容自动生成导回（导入）方案：能单文件导回的走单文件导回，不能的引导批量分享导入（先导出再导入，限制影响范围）",
       "parameters": {
         "feature": {
           "type": "string",
@@ -163,12 +163,16 @@
         },
         "action": {
           "type": "string",
-          "enum": ["locate", "read", "update", "find_action", "list"],
-          "description": "操作类型：定位/读取/修改/查找动作/列出"
+          "enum": ["locate", "read", "update", "find_action", "list", "import_plan"],
+          "description": "操作类型：定位/读取/修改/查找动作/列出/生成导回方案"
         },
         "value": {
           "type": "object",
           "description": "update 时传入的新值"
+        },
+        "items": {
+          "type": "array",
+          "description": "import_plan 时传入的修改项列表：功能关键词或文件路径/动作名"
         }
       },
       "examples": [
@@ -176,7 +180,10 @@
         "读取轮盘菜单动作",
         "把左键+C改成复制",
         "查找\"视频旋转修复版\"动作",
-        "列出所有动作"
+        "列出所有动作",
+        "我改了扩展热键，怎么导回",
+        "改了动作 5479d192，怎么单独导回",
+        "修改了多个配置文件，生成导入方案"
       ]
     }
   ],
@@ -322,6 +329,16 @@
   },
 
   "version_history": [
+    {
+      "version": "1.4.0",
+      "date": "2026-10-06",
+      "changes": [
+        "新增导回（导入）能力：get_import_plan 按修改内容自动判断单文件导回还是批量导入",
+        "映射新增 import_mode / import_method 字段与 import_guide（批量导入先导出再导入流程）",
+        "SKILL.md 新增「导回（导入）能力」章节与决策表",
+        "skill.json data_maintenance 支持 import_plan 操作"
+      ]
+    },
     {
       "version": "1.3.0",
       "date": "2026-10-06",

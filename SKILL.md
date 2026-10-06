@@ -369,6 +369,51 @@ Quicker 正在运行时不会热加载这些文件，需通过 Quicker 的「导
 按键格式为 `"修饰码|虚拟键码"`（如 `"2|65"` = Ctrl+A）；动作 `Data` 为 JSON 字符串需二次解析；
 映射文件与清单的完整版见 `data/quicker_export_map.json` 和用户侧《Quicker配置映射清单.md》。
 
+## 🔄 导回（导入）能力
+
+### 核心原则：限制导入影响范围
+
+用户修改配置后需要导回 Quicker 时，先判断该配置**能否单文件导回**：
+
+- **能单文件导回的** → 只导回该文件，不影响其它配置
+- **不能单文件导回的**（设置类）→ 引导走批量分享导入，且只勾选最小必要数据
+
+注意前提：`export` 目录只是备份快照，**Quicker 运行时不读它**，修改后必须通过下方导入通道生效。
+
+### 决策表（按修改的文件类型）
+
+| 修改的文件 | 导入模式 | 导入方法 |
+|---|---|---|
+| `actions\action_*.json`（动作） | **single** | 将 JSON 复制到剪贴板，面板空白格右键 → 粘贴动作；或动作右键 → 信息 → 导入动作定义（文件/剪贴板） |
+| `states\state_*.json` / `_action_adorn.json` | **single** | 动作右键 → 信息 → 动作数据 → 从云端恢复（仅该动作） |
+| `common_shared_subprogram_*.json` | **single** | 子程序管理 → 导入子程序文件（.qka） |
+| `actionpage_*.json`（动作页） | **batch** | 批量分享 → 导入动作页数据，只勾选该动作页 |
+| `common_user_settings.json`（快捷键/轮盘参数/文本指令/定时任务等） | **batch** | 批量分享 → 导入常规数据（覆盖式） |
+| `common_exe_*.json`（按程序的轮盘/手势/按键增强） | **batch** | 批量分享 → 导入常规数据（覆盖式） |
+| `common_user_gestures/mouseActions/powerKeys/preferences/favorBlocks.json` | **batch** | 批量分享 → 导入常规数据（覆盖式） |
+
+完整对应关系已写入映射（`data/quicker_export_map.json` 每项的 `import_mode` / `import_method`）。
+
+### 批量导入流程（必须先导出再导入）
+
+1. **先导出、保住现状**：设置 → 维护工具 → 备份数据（全量备份到 export 目录）；或先用批量分享把当前数据分享给自己留底
+2. 打开批量分享的导入链接（或自己分享给自己后打开）
+3. 只勾选必要数据：常规数据（个人设置/手势/轮盘等）按需勾选；动作页只勾本次涉及的
+4. **不要勾选"清空本地数据"**（否则删除本账号所有现有设置）
+5. 导入后核对改动生效、其它设置未受影响；异常时用第 1 步备份恢复
+
+> 官方说明：批量导入常规数据时，同账号已有设置会被**覆盖**，所以必须先导出再导入。
+
+### 代码入口（按修改内容自动判断）
+
+```python
+qm = QuickerExportMap()
+plan = qm.get_import_plan(["扩展热键"])                      # 功能关键词 → batch（设置类）
+plan = qm.get_import_plan(["actions\\action_5479d192-...json"])  # 文件 → single（动作）
+plan = qm.get_import_plan(["视频旋转修复版"])                 # 动作名 → single
+# => {"mode": "single"|"batch", "plans": [...], "steps": [...], "impact": "...", "warning": "..."}
+```
+
 ## 📝 CSV 格式规范
 
 Quicker 导出的 CSV 文件格式：
