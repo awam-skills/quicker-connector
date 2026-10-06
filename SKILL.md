@@ -1,8 +1,8 @@
 ---
 name: quicker-connector
-description: 与 Quicker 自动化工具集成，读取、搜索和执行 Quicker 动作列表。支持 CSV 和数据库双数据源，智能匹配用户需求并调用本地 QuickerStarter 执行。
+description: 与 Quicker 自动化工具集成，读取、搜索和执行 Quicker 动作列表。支持 CSV 和数据库双数据源，智能匹配用户需求并调用本地 QuickerStarter 执行。同时提供数据维护能力：解析维护工具全量备份（export 目录）、按配置映射定位/读取/修改快捷键、轮盘、手势、组合键等所有配置。
 author: CodeBuddy (optimized by Advanced Skill Creator)
-version: 1.2.0
+version: 1.3.0
 license: MIT
 tags:
   - automation
@@ -28,6 +28,12 @@ examples:
     description: 搜索特定关键词的动作
   - user: "列出所有可用的quicker动作"
     description: 获取完整动作列表和统计
+  - user: "quicker的扩展热键配置在哪里"
+    description: 用配置映射定位快捷键配置
+  - user: "把左键+C改成复制"
+    description: 读取并修改左键增强配置
+  - user: "怎么全量导出quicker配置"
+    description: 指导维护工具备份并生成映射
 
 requirements:
   python: ">=3.8"
@@ -279,6 +285,89 @@ actions = connector.read_actions()
 xaction_only = [a for a in actions if a.action_type == 'XAction']
 print(f"可执行 XAction: {len(xaction_only)} 个")
 ```
+
+## 🛠️ 数据维护（备份导出映射）
+
+### 全量导出的路径（用户操作指导）
+
+Quicker 的完整配置可以通过维护工具一键导出为**纯文本 JSON 文件**（不需要逐条手动复制）：
+
+1. 打开 Quicker → 点击设置（齿轮）→ **维护工具**
+2. 点击 **备份数据 → 备份全部数据**
+3. 选择输出目录（本机为 `G:\Data\Tools\Quicker\export`）
+
+官方文档：<https://getquicker.net/KC/Manual/Doc/settings-BasicToolsSettingPage>
+
+该功能会：
+- 备份 `quicker.db` 并移除访问密码
+- **将所有动作页和动作拆开分别放入单独文件**（这正是本技能数据维护的基础）
+
+### 导出目录结构（映射）
+
+`export_root` 下的文件类型与对应 Quicker 功能，完整机器可读映射见技能知识库：
+
+```
+export_root\
+├── actionpage_<ID>.json              # 动作页（面板）布局
+├── actions\action_<ID>_<名>.json     # 每个动作的完整定义（Data 为 JSON 字符串）
+├── states\state_<ID>.json            # 动作状态变量快照
+├── states\_action_adorn.json         # 动作徽标/角标/右键菜单装饰
+├── common_exe_<程序>.json            # 按程序的轮盘/手势/按键增强/组合键监听
+├── common_exe__global.json           # 全局公共触发配置（轮盘/手势/按键）
+├── common_shared_subprogram_<ID>.json # 共享子程序
+├── common_user_settings.json         # 全局设置（快捷键/触发/定时任务/WebSocket 等）
+├── common_user_gestures.json         # 手势预设形状
+├── common_user_mouseActions.json     # 鼠标动作
+├── common_user_powerKeys.json        # PowerKeys 按键增强
+├── common_user_preferences.json      # 界面偏好
+└── common_user_favorBlocks.json      # 收藏步骤模块
+```
+
+### 使用映射定位与读写配置
+
+技能知识库中的 `data/quicker_export_map.json` 提供「功能 → 文件 → 字段」三级映射。
+`scripts/quicker_connector.py` 的 `QuickerExportMap` 类实现代码直接读取与修改：
+
+```python
+from quicker_connector import QuickerExportMap
+
+qm = QuickerExportMap()  # 默认读 data/quicker_export_map.json + config.json 的 export_root
+
+# 1. 定位：某个配置在哪个文件哪个字段
+info = qm.locate("扩展热键")
+# => {"feature": "...", "file": "settings", "json_path": "HotKeysData.ActionHotkeys[]", ...}
+
+# 2. 读取当前值
+hotkeys = qm.read_config("扩展热键")
+
+# 3. 修改并写回（自动备份原文件为 .bak）
+qm.update_config("左键增强", new_left_button_plus_actions)
+
+# 4. 动作相关
+action = qm.find_action("视频旋转修复版")   # 按名称或 ID 定位 actions\ 文件
+data = qm.read_action_data("767bc646-b61f-46ce-818f-0b89f38d40d5")  # 解析 Data JSON
+```
+
+修改 `actions\*.json` 的 `Data`（动作步骤/变量）属高风险操作，修改前会生成 `.bak` 备份；
+Quicker 正在运行时不会热加载这些文件，需通过 Quicker 的「导入动作」或重启后生效。
+
+### 常见配置速查
+
+| 功能 | 文件 | 字段 |
+|---|---|---|
+| 扩展热键 / 全局快捷键 | `common_user_settings.json` | `HotKeysData`（JSON 字符串） |
+| 轮盘菜单动作 | `common_exe_<程序>.json` | `CircleMenuActions` |
+| 轮盘开关 | `common_user_settings.json` | `EnableCircleMenu` 等 |
+| 手势绑定 | `common_exe_<程序>.json` | `GestureActions` |
+| 左键增强（组合键） | `common_user_settings.json` | `LeftButtonPlusActions` |
+| 按键连击/长按 | `common_exe_<程序>.json` | `KeyActionItems` |
+| 组合键监听 | `common_exe_<程序>.json` | `HotkeyWatcherItems` |
+| PowerKeys | `common_user_powerKeys.json` | 整个文件 |
+| 定时任务 | `common_user_settings.json` | `AutoRunTaskList` / `TriggerTasks` |
+| WebSocket 服务 | `common_user_settings.json` | `WebsocketServerSettings` |
+
+按键格式为 `"修饰码|虚拟键码"`（如 `"2|65"` = Ctrl+A）；动作 `Data` 为 JSON 字符串需二次解析；
+映射文件与清单的完整版见 `data/quicker_export_map.json` 和用户侧《Quicker配置映射清单.md》。
 
 ## 📝 CSV 格式规范
 
