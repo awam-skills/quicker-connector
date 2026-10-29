@@ -1,6 +1,6 @@
 ---
 name: quicker-connector
-description: 与 Quicker 自动化工具集成，读取、搜索和执行 Quicker 动作列表。支持 CSV 和数据库双数据源，智能匹配用户需求并调用本地 QuickerStarter 执行。同时提供数据维护能力：解析维护工具全量备份（export 目录）、按配置映射定位/读取/修改快捷键、轮盘、手势、组合键等所有配置。
+description: 与 Quicker 自动化工具集成，读取、搜索和执行 Quicker 动作列表。支持 CSV 和数据库双数据源，智能匹配用户需求并调用本地 QuickerStarter 执行。同时提供数据维护能力：解析维护工具全量备份（export 目录）、按配置映射定位/读取/修改快捷键、轮盘、手势、组合键等所有配置。并可将「程序/脚本/命令」一键生成 Quicker「运行程序或打开文件」(ActionType 11) 的可导入动作 JSON（智能起名、自动探测解释器、日志重定向）。
 author: CodeBuddy (optimized by Advanced Skill Creator)
 version: 1.5.0
 license: MIT
@@ -34,6 +34,8 @@ examples:
     description: 读取并修改左键增强配置
   - user: "怎么全量导出quicker配置"
     description: 指导维护工具备份并生成映射
+  - user: "帮我把 potplayer_clip.py 做成 quicker 启动动作"
+    description: 生成可导入的『运行程序或打开文件』动作 JSON
 
 requirements:
   python: ">=3.8"
@@ -136,6 +138,7 @@ Quicker Connector 是一个专业的 Quicker 集成工具，让你能够通过 A
 | 🔧 **编码自适应** | 自动检测 UTF-8/GBK 等多种编码 |
 | 📈 **统计信息** | 完整动作分类和面板分布统计 |
 | 📤 **JSON 导出** | 一键导出完整动作列表 |
+| 🚀 **生成启动动作 JSON** | 把程序/脚本/命令变成可导入 Quicker 的「运行程序或打开文件」动作 |
 | 🖼️ **Excel 导出（含真实图标）** | 「图标」列嵌入真实图标图片，离线可用，并自动压缩重复图片媒体 |
 | 📦 **批量导出图标文件** | 一次导出全部动作图标为独立 PNG（去重 + 并发 + 本地缓存优先），附 `icons_manifest.json` |
 
@@ -270,6 +273,49 @@ class QuickerActionResult:
 ```python
 connector.export_to_json("actions.json")
 ```
+
+### 生成「运行程序或打开文件」动作 JSON（可导入 Quicker）
+
+把任意程序、脚本或命令，直接变成 Quicker 的 **运行程序或打开文件**（ActionType 11）动作定义 JSON，复制内容到面板空白格右键 → 粘贴动作即可导入。
+
+特性与默认值：
+
+| 项 | 默认 | 说明 |
+|---|---|---|
+| 动作类型 | ActionType 11 | 运行程序或打开文件 |
+| 管理员身份 | 否（`RunAsAdmin=false`） | `--admin` 可开启 |
+| 已在运行则激活窗口 | 是（`ActivateWindowIfRunning=true`） | `--no-activate` 关闭 |
+| 窗口风格 | 最小化（`WindowStyle=2`） | `--no-minimized` 改常规窗口 |
+| 工作目录 | 脚本/程序所在目录 | `--workdir` 覆盖 |
+| 名称 | 智能生成（脚本 docstring 首行 / 文件名清洗） | `--name` 覆盖 |
+| 解释器（.py） | 自动探测能 `import` 其依赖的**最高版本** Python | `--interpreter` 强制指定 |
+| 启动方式 | 脚本类（.py/.ps1/.bat/.cmd）默认**脱离 Quicker 启动** | `--no-detach` 改直接启动 |
+| 日志重定向 | 关闭 | `--log` 开启，输出到 `.cache/logs/<脚本名>.log`（已被 `.gitignore` 忽略，不进 Git） |
+
+命令示例：
+
+```bash
+# 运行 Python 脚本并开启日志（推荐用于后台常驻脚本，便于排查）
+python scripts/gen_run_action.py --script "G:\Projects\Tools\potplayer-helper\potplayer_clip.py" --log
+
+# 直接运行/打开程序或文件
+python scripts/gen_run_action.py --command "notepad.exe" "C:\a.txt"
+
+# 运行 PowerShell 脚本 / 批处理
+python scripts/gen_run_action.py --script "x.ps1"
+python scripts/gen_run_action.py --script "x.bat"
+
+# 自定义：名称、工作目录、关闭日志、指定解释器、输出文件
+python scripts/gen_run_action.py --script a.py --name "我的动作" --workdir D:\work --no-log --interpreter "C:\Python312\python.exe" --out out.json
+```
+
+**为什么要「脱离启动」**：Quicker 的「运行程序或打开文件」会把启动的进程当成自己的子进程跟踪，动作保持「运行中」；依赖全局键盘钩子（如 `keyboard` 库）的脚本会因此收不到按键，直到手动终止动作才生效。脚本类默认通过启动器脱离 Quicker 独立运行——生成器顺带写一个 `.ps1` 启动器到 `.cache/launchers/`（已被 `.gitignore` 忽略），Quicker 动作只执行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<launcher>.ps1"`（与已验证可用的参考动作同构），启动器内部用 `Start-Process` 让目标进程完全脱离，动作立即结束、进程真正后台常驻。
+
+> ⚠️ 不要用 `cmd.exe /c` + `start` 方案：Quicker 启动 cmd 时会接管 stdout 管道，`start` 在管道环境下会等待子进程，整条链被拖住、动作卡在「运行中」（实测踩坑）。`powershell.exe -File` + `Start-Process` 在同样的管道环境下会立即退出，已验证。
+
+日志重定向的实现：开启 `--log` 时，启动器内部用 `Start-Process -RedirectStandardOutput / -RedirectStandardError` 落盘，stdout 写 `.cache/logs/<脚本名>.log`、stderr 写 `<脚本名>.err.log`；导入后可随时打开日志确认执行状态与报错。
+
+> 日志与启动器文件名固定为**纯 ASCII**（取脚本文件名，如 `potplayer_clip.log`，中文自动转下划线）：外壳双层引号里含中文/空格会破坏路径/重定向解析导致文件无法创建；动作标题仍保留智能中文名。日志与启动器均落在 `.cache/` 下，`.gitignore` 已忽略 `*.log` / `logs/` / `.cache/`，不会进入 Git。
 
 ### 导出 Excel（含真实图标）
 
